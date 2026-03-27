@@ -21,4 +21,5 @@ router.get("/status", (req, res) => {
 // Final tax calculation route
 router.post("/calculate", calculateTax);
 
+
 module.exports = router;

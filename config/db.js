@@ -1,11 +1,11 @@
-const mysql = require("mysql2");
+require("dotenv").config();
+const { Pool } = require("pg");
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "Root@123",   // MUST be string
-  database: "expense_tax_db",
-  port: 3306
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
-module.exports = db;
+module.exports = pool;
