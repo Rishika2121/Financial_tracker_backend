@@ -26,9 +26,8 @@ router.post("/chat", async (req, res) => {
     });
 
     res.json({
-      answer: response.choices[0].message.content
-    });
-
+  reply: response.choices[0].message.content
+});
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "AI error" });
