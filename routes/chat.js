@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const OpenAI = require("openai");
 
-// Initialize OpenAI conditionally to prevent crashing if the key is completely missing
+// Initialize OpenAI safely
 let openai;
 try {
   openai = new OpenAI({
@@ -14,49 +14,78 @@ try {
 
 router.post("/chat", async (req, res) => {
   try {
-    const { question, userData } = req.body;
+    const incomingBody = req.body || {};
 
+    // Accept multiple frontend formats
+    const question =
+      incomingBody.question ||
+      incomingBody.message ||
+      incomingBody.prompt ||
+      incomingBody.text;
+
+    const userData = incomingBody.userData;
+
+    // ✅ 1. Check if question exists
     if (!question) {
-      return res.status(400).json({ reply: "Please ask a question." });
-    }
-
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "your_key_here") {
-      return res.status(500).json({ 
-        error: "Missing API Key", 
-        reply: "Backend Error: Please set a valid OPENAI_API_KEY in the .env file. Currently, the key is missing or invalid." 
+      return res.json({
+        reply: `⚠️ Frontend issue: No question received. Keys received: [${Object.keys(
+          incomingBody
+        ).join(", ")}]`,
       });
     }
 
+    // ✅ 2. Check API Key
+    if (
+      !process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_API_KEY.includes("your_key_here") ||
+      process.env.OPENAI_API_KEY === "missing_key"
+    ) {
+      return res.json({
+        reply:
+          "⚠️ OpenAI API key is missing or invalid. Please add a valid key in backend (.env and Render Environment).",
+      });
+    }
+
+    // ✅ 3. Call OpenAI
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are an Indian tax expert. Answer simply and concisely in a friendly tone.",
+          content:
+            "You are an expert Indian tax assistant. Give clear, simple, practical answers in a friendly tone.",
         },
         {
           role: "user",
-          content: `User Data: ${JSON.stringify(userData || {})} \n Question: ${question}`,
+          content: `User Data: ${JSON.stringify(
+            userData || {}
+          )}\nQuestion: ${question}`,
         },
       ],
     });
 
+    // ✅ 4. Send response
     res.json({
       reply: response.choices[0].message.content,
     });
   } catch (err) {
-    console.error("OpenAI API Error details:", err.message);
-    
-    // Provide a safe fallback response so the frontend doesn't show "Bot: undefined"
-    let errorMessage = "Sorry, I am having trouble connecting to the AI server. Please try again later.";
-    
+    console.error("OpenAI API Error:", err.message);
+
+    let errorMessage =
+      "❌ AI is currently unavailable. Please try again later.";
+
     if (err.status === 401) {
-      errorMessage = "Backend Error: The configured OpenAI API key is invalid or expired.";
+      errorMessage =
+        "❌ Invalid OpenAI API key. Please check your backend configuration.";
     } else if (err.status === 429) {
-      errorMessage = "Backend Error: OpenAI API quota exceeded (Rate Limit). Please check your billing details.";
+      errorMessage =
+        "❌ OpenAI quota exceeded. Please check billing or usage limits.";
     }
 
-    res.status(500).json({ error: err.message, reply: errorMessage });
+    // Always return 200 so frontend shows message
+    res.json({
+      reply: errorMessage,
+    });
   }
 });
 
