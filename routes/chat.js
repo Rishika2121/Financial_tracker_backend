@@ -1,88 +1,78 @@
 const express = require("express");
 const router = express.Router();
-const OpenAI = require("openai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Initialize OpenAI safely
-let openai;
-try {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || "missing_key",
-  });
-} catch (err) {
-  console.error("Failed to initialize OpenAI client:", err);
-}
+// ✅ Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// ✅ Chat Route
 router.post("/chat", async (req, res) => {
   try {
-    const incomingBody = req.body || {};
+    const body = req.body || {};
 
-    // Accept multiple frontend formats
+    // ✅ Accept multiple formats from frontend
     const question =
-      incomingBody.question ||
-      incomingBody.message ||
-      incomingBody.prompt ||
-      incomingBody.text;
+      body.question ||
+      body.message ||
+      body.prompt ||
+      body.text;
 
-    const userData = incomingBody.userData;
+    const userData = body.userData || {};
 
-    // ✅ 1. Check if question exists
+    // ✅ 1. Validate question
     if (!question) {
       return res.json({
-        reply: `⚠️ Frontend issue: No question received. Keys received: [${Object.keys(
-          incomingBody
-        ).join(", ")}]`,
+        reply: "⚠️ No question received from frontend.",
       });
     }
 
-    // ✅ 2. Check API Key
-    if (
-      !process.env.OPENAI_API_KEY ||
-      process.env.OPENAI_API_KEY.includes("your_key_here") ||
-      process.env.OPENAI_API_KEY === "missing_key"
-    ) {
+    // ✅ 2. Validate API key
+    if (!process.env.GEMINI_API_KEY) {
       return res.json({
-        reply:
-          "⚠️ OpenAI API key is missing or invalid. Please add a valid key in backend (.env and Render Environment).",
+        reply: "⚠️ Gemini API key missing in backend (.env).",
       });
     }
 
-    // ✅ 3. Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert Indian tax assistant. Give clear, simple, practical answers in a friendly tone.",
-        },
-        {
-          role: "user",
-          content: `User Data: ${JSON.stringify(
-            userData || {}
-          )}\nQuestion: ${question}`,
-        },
-      ],
+    // ✅ 3. Create model
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     });
 
-    // ✅ 4. Send response
+    // ✅ 4. System prompt (important for behavior)
+    const systemPrompt =
+      "You are an expert Indian tax assistant. Give simple, clear, practical answers in a friendly tone.";
+
+    // ✅ 5. Final prompt
+    const finalPrompt = `
+${systemPrompt}
+
+User Data:
+${JSON.stringify(userData, null, 2)}
+
+User Question:
+${question}
+`;
+
+    // ✅ 6. Call Gemini
+    const result = await model.generateContent(finalPrompt);
+    const response = result.response.text();
+
+    // ✅ 7. Send response
     res.json({
-      reply: response.choices[0].message.content,
+      reply: response,
     });
-  } catch (err) {
-    console.error("OpenAI API Error:", err.message);
 
-    let errorMessage =
-      "❌ AI is currently unavailable. Please try again later.";
+  } catch (error) {
+    console.error("Gemini Error:", error.message);
 
-    if (err.status === 401) {
-      errorMessage =
-        "❌ Invalid OpenAI API key. Please check your backend configuration.";
-    } else if (err.status === 429) {
-      errorMessage =
-        "❌ OpenAI quota exceeded. Please check billing or usage limits.";
+    let errorMessage = "❌ AI is currently unavailable.";
+
+    if (error.message?.includes("API key not valid")) {
+      errorMessage = "❌ Invalid Gemini API key.";
+    } else if (error.message?.includes("429")) {
+      errorMessage = "❌ Gemini quota exceeded. Try later.";
     }
 
-    // Always return 200 so frontend shows message
     res.json({
       reply: errorMessage,
     });
