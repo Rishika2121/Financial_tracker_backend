@@ -1,18 +1,13 @@
 const express = require("express");
 const router = express.Router();
-const OpenAI = require("openai");
-
-// ✅ Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const axios = require("axios");
 
 // ✅ Chat Route
 router.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
 
-    // ✅ Accept multiple frontend formats
+    // ✅ Accept multiple formats from frontend
     const question =
       body.question ||
       body.message ||
@@ -21,7 +16,7 @@ router.post("/chat", async (req, res) => {
 
     const userData = body.userData || {};
 
-    // ✅ 1. Validate question
+    // ✅ 1. Validate input
     if (!question) {
       return res.json({
         reply: "⚠️ No question received from frontend.",
@@ -29,47 +24,60 @@ router.post("/chat", async (req, res) => {
     }
 
     // ✅ 2. Check API key
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.HUGGINGFACE_API_KEY) {
       return res.json({
-        reply: "⚠️ OpenAI API key missing in backend.",
+        reply: "⚠️ Hugging Face API key missing in backend.",
       });
     }
 
-    // ✅ 3. Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert Indian tax assistant. Give simple, clear, practical answers in a friendly tone.",
+    // ✅ 3. Create prompt (better response quality)
+    const prompt = `
+You are an expert Indian tax assistant. Answer clearly, simply, and practically.
+
+User Data:
+${JSON.stringify(userData)}
+
+Question:
+${question}
+`;
+
+    // ✅ 4. Call Hugging Face API
+    const response = await axios.post(
+      "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+      {
+        inputs: prompt,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
         },
-        {
-          role: "user",
-          content: `User Data: ${JSON.stringify(userData)}\nQuestion: ${question}`,
-        },
-      ],
-    });
+      }
+    );
 
-    // ✅ 4. Send response
-    res.json({
-      reply: response.choices[0].message.content,
-    });
+    // ✅ 5. Extract response safely
+    let reply = "⚠️ No response from AI.";
 
-  } catch (error) {
-    console.error("OpenAI Error:", error.message);
-
-    let errorMessage = "❌ AI is currently unavailable.";
-
-    if (error.status === 401) {
-      errorMessage = "❌ Invalid OpenAI API key.";
-    } else if (error.status === 429) {
-      errorMessage = "❌ OpenAI quota exceeded. Try later.";
+    if (Array.isArray(response.data) && response.data[0]?.generated_text) {
+      reply = response.data[0].generated_text;
     }
 
-    res.json({
-      reply: errorMessage,
-    });
+    res.json({ reply });
+
+  } catch (error) {
+    console.error("Hugging Face Error:", error.message);
+
+    let errorMessage = "❌ AI is currently unavailable. Try again later.";
+
+    if (error.response?.status === 401) {
+      errorMessage = "❌ Invalid Hugging Face API key.";
+    } else if (error.response?.status === 429) {
+      errorMessage = "❌ Too many requests. Please wait and try again.";
+    } else if (error.response?.status === 503) {
+      errorMessage = "⏳ Model is loading. Try again in a few seconds.";
+    }
+
+    res.json({ reply: errorMessage });
   }
 });
 
