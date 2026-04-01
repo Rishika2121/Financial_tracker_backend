@@ -22,11 +22,11 @@ router.post("/chat", async (req, res) => {
         reply: "⚠️ No question received from frontend.",
       });
     }
-
+    console.log(process.env.GROQ_API_KEY ? "✅ Groq API key found" : "⚠️ Groq API key NOT found"  );
     // ✅ 2. Check API key
-    if (!process.env.HUGGINGFACE_API_KEY) {
+    if (!process.env.GROQ_API_KEY) {
       return res.json({
-        reply: "⚠️ Hugging Face API key missing in backend.",
+        reply: "⚠️ Groq API key missing in backend.",
       });
     }
 
@@ -41,40 +41,52 @@ Question:
 ${question}
 `;
 
-    // ✅ 4. Call Hugging Face API
+    // ✅ 4. Call Groq API (free, fast, reliable)
     const response = await axios.post(
-     "https://api-inference.huggingface.co/models/google/flan-t5-large",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        inputs: prompt,
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: "You are an expert Indian tax assistant. Answer clearly, simply, and practically." },
+          { role: "user", content: `User Data: ${JSON.stringify(userData)}\n\nQuestion: ${question}` }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024,
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
           "Content-Type": "application/json",
         },
       }
     );
 
+    console.log("Groq Response:", response.data);
+
     // ✅ 5. Extract response safely
     let reply = "⚠️ No response from AI.";
 
-    if (Array.isArray(response.data) && response.data[0]?.generated_text) {
-      reply = response.data[0].generated_text;
+    if (response.data?.choices?.[0]?.message?.content) {
+      reply = response.data.choices[0].message.content;
     }
+
+    console.log("AI Reply:", reply);
 
     res.json({ reply });
 
   } catch (error) {
-    console.error("Hugging Face Error:", error.message);
+    console.error("Groq Error:", error.message);
+    console.error("Status Code:", error.response?.status);
+    console.error("Response Data:", error.response?.data);
 
     let errorMessage = "❌ AI is currently unavailable. Try again later.";
 
     if (error.response?.status === 401) {
-      errorMessage = "❌ Invalid Hugging Face API key.";
+      errorMessage = "❌ Invalid Groq API key.";
     } else if (error.response?.status === 429) {
       errorMessage = "❌ Too many requests. Please wait and try again.";
     } else if (error.response?.status === 503) {
-      errorMessage = "⏳ Model is loading. Try again in a few seconds.";
+      errorMessage = "⏳ Groq service is temporarily unavailable. Try again in a few seconds.";
     }
 
     res.json({ reply: errorMessage });
